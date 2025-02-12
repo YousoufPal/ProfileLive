@@ -41,8 +41,22 @@ app.post('/upload', upload.single('resume'), async (req, res) => {
     try {
         const data = await pdf(dataBuffer);
         console.log('Extracted PDF Text:', data.text);
-        const aiResponse = await extractResumeDataWithAI(data.text);
-+       console.log('AI Response:', aiResponse);
+
+        let aiResponse;
+        try {
+            const rawAIResponse = await extractResumeDataWithAI(data.text);
+            aiResponse = JSON.parse(rawAIResponse); 
+            console.log('AI Extracted Data:', aiResponse);
+            res.json({ success: true, data: aiResponse }); 
+            } catch (parseError) {
+                console.error('JSON Parse Error:', parseError);
+                console.log('Raw AI Response (parse failed):', rawAIResponse);  
+                return res.status(500).json({ success: false, message: 'Failed to parse AI response.', rawResponse: rawAIResponse });
+            }
+
+        // const aiResponse = await extractResumeDataWithAI(data.text);
+        // console.log('AI Response:', aiResponse);
+
         res.json({ message: 'PDF parsed, text logged to console.' });
     } catch (error) {
     console.error('Error parsing PDF:', error);
@@ -71,12 +85,18 @@ async function extractResumeDataWithAI(text) {
             temperature: 0.5,
             max_tokens: 500,
         });
-            return response.choices[0].message.content; 
-        } catch (error) {
-            console.error('OpenAI API error:', error);
-            return { error: 'Failed to extract data from resume using AI.' };
+        const content = response.choices[0].message.content;
+        if (!content) {
+            console.warn('OpenAI API returned empty content.');
+            return '{}'; // Return empty JSON object string if content is empty
         }
+        return content;
+
+    } catch (error) {
+        console.error('OpenAI API error:', error);
+        return { error: 'Failed to extract data from resume using AI.' };
     }
+}
 
 
 app.listen(port, () => {
