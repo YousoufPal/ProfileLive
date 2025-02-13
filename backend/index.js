@@ -4,6 +4,7 @@ require('dotenv').config();
 const multer = require('multer');
 const fs = require('fs'); 
 const { OpenAI } = require('openai');
+const mongoose = require('mongoose');
 
 const app = express();
 const port = 8000;
@@ -16,6 +17,13 @@ app.use(express.json());
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY, 
 });
+
+const mongoURI = 'mongodb://localhost:27017/profilelive'; 
+
+mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
+    .then(() => console.log('MongoDB connected successfully'))
+    .catch(err => console.error('MongoDB connection error:', err));
+
 
 app.get('/', (req, res) => {
     res.send('Backend server is running!');
@@ -88,7 +96,7 @@ async function extractResumeDataWithAI(text) {
         const content = response.choices[0].message.content;
         if (!content) {
             console.warn('OpenAI API returned empty content.');
-            return '{}'; // Return empty JSON object string if content is empty
+            return '{}'; 
         }
         return content;
 
