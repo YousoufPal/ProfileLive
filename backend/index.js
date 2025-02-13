@@ -5,6 +5,7 @@ const multer = require('multer');
 const fs = require('fs'); 
 const { OpenAI } = require('openai');
 const mongoose = require('mongoose');
+const User = require('./models/User');
 
 const app = express();
 const port = 8000;
@@ -51,9 +52,32 @@ app.post('/upload', upload.single('resume'), async (req, res) => {
         console.log('Extracted PDF Text:', data.text);
 
         let aiResponse;
+        let extractedData;
+
         try {
             const rawAIResponse = await extractResumeDataWithAI(data.text);
             aiResponse = JSON.parse(rawAIResponse); 
+
+            extractedData = {
+                name: aiResponse.Name,
+                experience: aiResponse.Experience.map(exp => ({
+                    jobTitle: exp['Job Title'],
+                    company: exp.Company,
+                    dates: exp.Dates
+                })),
+                education: aiResponse.Education.map(edu => ({
+                    degree: edu.Degree || edu.Program,
+                    institution: edu.Institution,
+                    dates: edu.Dates
+                })),
+                skills: aiResponse.Skills.split(',').map(skill => skill.trim())
+            };
+            console.log('Transformed AI Data:', extractedData);
+
+
+            const newUser = new User(extractedData);
+            await newUser.save();
+
             console.log('AI Extracted Data:', aiResponse);
             res.json({ success: true, data: aiResponse }); 
             } catch (parseError) {
