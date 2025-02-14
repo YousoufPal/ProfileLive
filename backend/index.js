@@ -31,7 +31,7 @@ app.get('/', (req, res) => {
 });
 
 app.post('/upload', upload.single('resume'), async (req, res) => {
-    res.json({ message: 'Upload endpoint hit, but no file processing yet.' });
+
     if (!req.file) {
         return res.status(400).send('No file uploaded.');
     }
