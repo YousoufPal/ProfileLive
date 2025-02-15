@@ -1,25 +1,26 @@
 import { useState } from 'react';
 import axios from 'axios';
 import { motion } from 'framer-motion';
+import { ApiResponse, ResumeData } from '../types/api'; // Import API types
 
-interface Experience {
-    jobTitle: string;
-    company: string;
-    dates: string;
-}
+// interface Experience {
+//     jobTitle: string;
+//     company: string;
+//     dates: string;
+// }
 
-interface Education {
-    degree: string;
-    institution: string;
-    dates: string;
-}
+// interface Education {
+//     degree: string;
+//     institution: string;
+//     dates: string;
+// }
 
-interface ResumeData {
-    name: string;
-    experience: Experience[];
-    education: Education[];
-    skills: string[];
-}
+// interface ResumeData {
+//     name: string;
+//     experience: Experience[];
+//     education: Education[];
+//     skills: string[];
+// }
 
 
 export default function UploadPage() {
@@ -42,7 +43,7 @@ export default function UploadPage() {
                 headers: { 'Content-Type': 'multipart/form-data' },
             });
 
-            setResumeData(response.data.data);
+            setResumeData(response.data.data as ResumeData); // Type assertion here
         } catch (err) {
             setError('Failed to upload and process resume.');
             console.error(err);
