@@ -69,7 +69,10 @@ export default function UploadPage() {
                     </p>
 
                     <div className="mb-8">
-                        <button className="bg-blue-600 text-white px-4 py-2 rounded-md">
+                        <button
+                            onClick={() => window.location.href = 'http://localhost:8000/auth/linkedin'}
+                            className="bg-blue-600 text-white px-4 py-2 rounded-md"
+                        >
                             Connect with LinkedIn (Placeholder)
                         </button>
                     </div>

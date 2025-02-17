@@ -6,6 +6,7 @@ const fs = require('fs');
 const { OpenAI } = require('openai');
 const mongoose = require('mongoose');
 const User = require('./models/User');
+const querystring = require('querystring');
 
 const app = express();
 const port = 8000;
@@ -129,6 +130,22 @@ async function extractResumeDataWithAI(text) {
         return { error: 'Failed to extract data from resume using AI.' };
     }
 }
+
+const linkedinAuthUrl = 'https://www.linkedin.com/oauth/v2/authorization';
+
+app.get('/auth/linkedin', (req, res) => {
+    const params = querystring.stringify({
+        response_type: 'code',
+        client_id: process.env.LINKEDIN_CLIENT_ID, 
+        redirect_uri: 'http://localhost:8000/auth/linkedin/callback',
+        scope: 'openid profile email', 
+        state: 'abc123' 
+    });
+
+    res.redirect(`${linkedinAuthUrl}?${params}`);
+});
+
+
 
 
 app.listen(port, () => {
