@@ -1,49 +1,58 @@
 import { useState } from 'react';
 import axios from 'axios';
 import { motion } from 'framer-motion';
-import { ApiResponse, ResumeData } from '../types/api'; // Import API types
 
-// interface Experience {
-//     jobTitle: string;
-//     company: string;
-//     dates: string;
-// }
+interface Experience {
+    jobTitle: string;
+    company: string;
+    dates: string;
+}
 
-// interface Education {
-//     degree: string;
-//     institution: string;
-//     dates: string;
-// }
+interface Education {
+    degree: string;
+    institution: string;
+    dates: string;
+}
 
-// interface ResumeData {
-//     name: string;
-//     experience: Experience[];
-//     education: Education[];
-//     skills: string[];
-// }
-
+interface LocalResumeData {
+    name: string;
+    experience: Experience[];
+    education: Education[];
+    skills: string[];
+}
 
 export default function UploadPage() {
-    const [resumeData, setResumeData] = useState<ResumeData | null>(null);
+    const [resumeData, setResumeData] = useState<LocalResumeData | null>(null);
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<string>('');
 
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
-
+    
         setLoading(true);
         setError('');
-
+    
         const formData = new FormData();
         formData.append('resume', file);
-
+    
         try {
             const response = await axios.post('http://localhost:8000/upload', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' },
             });
-
-            setResumeData(response.data.data as ResumeData); // Type assertion here
+    
+            const transformedData: LocalResumeData = {
+                name: response.data.data.name,
+                experience: response.data.data.experience.map((exp: Experience) => ({
+                    jobTitle: exp.jobTitle,
+                    company: exp.company,
+                    dates: exp.dates
+                })),
+                education: response.data.data.education,
+                skills: response.data.data.skills
+            };
+    
+            setResumeData(transformedData);
         } catch (err) {
             setError('Failed to upload and process resume.');
             console.error(err);
@@ -73,7 +82,7 @@ export default function UploadPage() {
                             onClick={() => window.location.href = 'http://localhost:8000/auth/linkedin'}
                             className="bg-blue-600 text-white px-4 py-2 rounded-md"
                         >
-                            Connect with LinkedIn (Placeholder)
+                            Connect with LinkedIn
                         </button>
                     </div>
 
