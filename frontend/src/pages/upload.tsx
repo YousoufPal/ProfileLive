@@ -74,7 +74,7 @@ export default function UploadPage() {
                         Build Your Personal Website
                     </h1>
                     <p className="text-lg text-gray-600 mb-8 text-center">
-                        Upload your resume, and we'll transform it into a stunning personal website.
+                        Upload your resume, and we&apos;ll transform it into a stunning personal website.
                     </p>
 
                     <div className="mb-8">
