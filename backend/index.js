@@ -81,6 +81,7 @@ app.get('/user/:id', async (req, res) => {
     }
 });
 
+
 const linkedinAuthUrl = 'https://www.linkedin.com/oauth/v2/authorization';
 const linkedinTokenUrl = 'https://www.linkedin.com/oauth/v2/accessToken';
 
@@ -89,7 +90,7 @@ app.get('/auth/linkedin', (req, res) => {
         response_type: 'code',
         client_id: process.env.LINKEDIN_CLIENT_ID,
         redirect_uri: 'http://localhost:8000/auth/linkedin/callback',
-        scope: 'openid profile email r_liteprofile r_fullprofile r_emailaddress w_member_social',
+        scope: 'openid profile email',  // Back to the working OpenID Connect scopes
         state: 'abc123'
     });
 
@@ -97,6 +98,15 @@ app.get('/auth/linkedin', (req, res) => {
 });
 
 app.get('/auth/linkedin/callback', async (req, res) => {
+    if (req.query.error) {
+        console.error('LinkedIn OAuth error:', req.query);
+        return res.status(400).json({ 
+            success: false, 
+            error: req.query.error,
+            description: req.query.error_description 
+        });
+    }
+
     const code = req.query.code;
     console.log('LinkedIn callback query parameters:', req.query);
     
@@ -122,38 +132,14 @@ app.get('/auth/linkedin/callback', async (req, res) => {
 
         const { access_token } = tokenResponse.data;
 
-        const basicProfileResponse = await axios.get('https://api.linkedin.com/v2/me', {
+        // Get user info using the OpenID Connect userinfo endpoint
+        const userInfoResponse = await axios.get('https://api.linkedin.com/v2/userinfo', {
             headers: {
                 'Authorization': `Bearer ${access_token}`
             }
         });
 
-        const emailResponse = await axios.get('https://api.linkedin.com/v2/emailAddress?q=members&projection=(elements*(handle~))', {
-            headers: {
-                'Authorization': `Bearer ${access_token}`
-            }
-        });
-
-        const fullProfileResponse = await axios.get('https://api.linkedin.com/v2/me?projection=(id,firstName,lastName,profilePicture,headline,summary,positions,education,skills)', {
-            headers: {
-                'Authorization': `Bearer ${access_token}`
-            }
-        });
-
-        const positionsResponse = await axios.get('https://api.linkedin.com/v2/positions?q=member&projection=(elements*(id,title,company,startDate,endDate,current,description))', {
-            headers: {
-                'Authorization': `Bearer ${access_token}`
-            }
-        });
-
-        const profileData = {
-            ...basicProfileResponse.data,
-            email: emailResponse.data.elements?.[0]?.['handle~']?.emailAddress,
-            fullProfile: fullProfileResponse.data,
-            positions: positionsResponse.data
-        };
-
-        res.json(profileData);
+        res.json(userInfoResponse.data);
     } catch (error) {
         console.error('Error details:', {
             message: error.message,
