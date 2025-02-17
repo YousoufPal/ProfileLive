@@ -7,6 +7,7 @@ const { OpenAI } = require('openai');
 const mongoose = require('mongoose');
 const User = require('./models/User');
 const querystring = require('querystring');
+const axios = require('axios');
 
 const app = express();
 const port = 8000;
@@ -132,6 +133,7 @@ async function extractResumeDataWithAI(text) {
 }
 
 const linkedinAuthUrl = 'https://www.linkedin.com/oauth/v2/authorization';
+const linkedinTokenUrl = 'https://www.linkedin.com/oauth/v2/accessToken';
 
 app.get('/auth/linkedin', (req, res) => {
     const params = querystring.stringify({
@@ -145,6 +147,47 @@ app.get('/auth/linkedin', (req, res) => {
     res.redirect(`${linkedinAuthUrl}?${params}`);
 });
 
+app.get('/auth/linkedin/callback', async (req, res) => {
+    const code = req.query.code;
+    if (!code) {
+        return res.status(400).send('No code provided');
+    }
+
+    try {
+        const formData = querystring.stringify({
+            grant_type: 'authorization_code',
+            code: code,
+            redirect_uri: 'http://localhost:8000/auth/linkedin/callback',
+            client_id: process.env.LINKEDIN_CLIENT_ID,
+            client_secret: process.env.LINKEDIN_CLIENT_SECRET // Ensure you have LINKEDIN_CLIENT_SECRET in .env
+        });
+    
+        const tokenResponse = await axios.post(linkedinTokenUrl, formData, {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+        });
+    
+            const { access_token } = tokenResponse.data;
+    
+    
+        const profileResponse = await axios.get('https://api.linkedin.com/v2/me', {
+            headers: {
+                'Authorization': `Bearer ${access_token}`
+            }
+        });
+    
+        res.json({
+            success: true,
+            profile: profileResponse.data,
+            accessToken: access_token
+        });
+    
+    } catch (error) {
+        console.error('LinkedIn OAuth error:', error);
+        res.status(500).json({ success: false, message: 'Failed to authenticate with LinkedIn' });
+    }
+});
 
 
 
