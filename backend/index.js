@@ -11,6 +11,8 @@ require('dotenv').config();
 const axios = require('axios');
 const querystring = require('querystring');
 const { OpenAI } = require('openai');
+const puppeteer = require('puppeteer');
+
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -155,9 +157,80 @@ app.get('/auth/linkedin/callback', async (req, res) => {
     }
 });
 
-app.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}`);
-});
+app.post('/linkedin-scrape', async (req, res) => {
+    try {
+      const { profileUrl } = req.body;
+      if (!profileUrl || !profileUrl.includes("linkedin.com/in/")) {
+        return res.status(400).json({ error: "Invalid LinkedIn URL" });
+      }
+  
+      const browser = await puppeteer.launch({ headless: true });
+      const page = await browser.newPage();
+      
+      // Set a reasonable viewport and user agent to mimic a real browser
+      await page.setViewport({ width: 1280, height: 800 });
+      await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36");
+  
+      await page.goto(profileUrl, { waitUntil: 'networkidle2' });
+      
+      // Optional: wait a few seconds to ensure dynamic content loads
+      await page.waitForTimeout(3000);
+  
+      const scrapedData = await page.evaluate(() => {
+        // Name: assume the first <h1> is the name
+        const nameEl = document.querySelector('h1');
+        const name = nameEl ? nameEl.innerText.trim() : "";
+  
+        // Headline: try looking for an <h2> or a div in the top card
+        let headline = "";
+        const headlineEl = document.querySelector('h2') ||
+                            document.querySelector('.pv-text-details__left-panel div:nth-child(2)');
+        if (headlineEl) {
+          headline = headlineEl.innerText.trim();
+        }
+  
+        // Location: try to grab the first list item in the top-card bullet list
+        let location = "";
+        const locationEl = document.querySelector('.pv-text-details__left-panel ul.pv-top-card--list-bullet li');
+        if (locationEl) {
+          location = locationEl.innerText.trim();
+        }
+  
+        // Experience: look for a section with "experience" in its id or class name
+        let experience = [];
+        const expSection = document.querySelector('section[id*="experience"]') || document.querySelector('section.experience-section');
+        if (expSection) {
+          const expItems = expSection.querySelectorAll('li');
+          experience = Array.from(expItems).map(li => li.innerText.trim()).filter(text => text.length > 0);
+        }
+  
+        // Education: similarly, look for an education section
+        let education = [];
+        const eduSection = document.querySelector('section[id*="education"]') || document.querySelector('section.education-section');
+        if (eduSection) {
+          const eduItems = eduSection.querySelectorAll('li');
+          education = Array.from(eduItems).map(li => li.innerText.trim()).filter(text => text.length > 0);
+        }
+  
+        // Skills: try to locate the skills section and extract skill names
+        let skills = [];
+        const skillsSection = document.querySelector('section.pv-skill-categories-section');
+        if (skillsSection) {
+          const skillEls = skillsSection.querySelectorAll('.pv-skill-category-entity__name-text');
+          skills = Array.from(skillEls).map(el => el.innerText.trim()).filter(text => text.length > 0);
+        }
+  
+        return { name, headline, location, experience, education, skills };
+      });
+  
+      await browser.close();
+      res.json(scrapedData);
+    } catch (error) {
+      console.error('Error scraping LinkedIn profile:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
 
 async function extractResumeDataWithAI(text) {
     const prompt = `
@@ -183,3 +256,7 @@ async function extractResumeDataWithAI(text) {
     const extractedData = JSON.parse(response.choices[0].message.content);
     return extractedData;
 }
+
+app.listen(port, () => {
+    console.log(`Server running on http://localhost:${port}`);
+});
