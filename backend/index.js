@@ -164,65 +164,81 @@ app.post('/linkedin-scrape', async (req, res) => {
         return res.status(400).json({ error: "Invalid LinkedIn URL" });
       }
   
-      const browser = await puppeteer.launch({ headless: true });
+      const browser = await puppeteer.launch({ headless: false });
       const page = await browser.newPage();
-      
-      // Set a reasonable viewport and user agent to mimic a real browser
-      await page.setViewport({ width: 1280, height: 800 });
-      await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36");
   
-      await page.goto(profileUrl, { waitUntil: 'networkidle2' });
-      
-      // Optional: wait a few seconds to ensure dynamic content loads
-      await page.waitForTimeout(3000);
+      // Set viewport and user agent to mimic a real browser
+      await page.setViewport({ width: 1280, height: 800 });
+      await page.setUserAgent(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+      );
+  
+      // Load session cookies from file and set them in the page
+      const cookiesString = fs.readFileSync('linkedin-cookies.json', 'utf8');
+      const cookies = JSON.parse(cookiesString);
+      await page.setCookie(...cookies);
+  
+      // Navigate to the profile page with authentication
+      await page.goto(profileUrl, { waitUntil: 'load', timeout: 60000 });
+  
+      // Wait for a key element to ensure the profile page is loaded
+      await page.waitForSelector('h1', { timeout: 10000 });
   
       const scrapedData = await page.evaluate(() => {
-        // Name: assume the first <h1> is the name
+        // Name: Using the first <h1> element
         const nameEl = document.querySelector('h1');
         const name = nameEl ? nameEl.innerText.trim() : "";
-  
-        // Headline: try looking for an <h2> or a div in the top card
+      
+        // Headline: Try selecting the element with a class commonly used for the headline in the left panel
         let headline = "";
-        const headlineEl = document.querySelector('h2') ||
-                            document.querySelector('.pv-text-details__left-panel div:nth-child(2)');
+        const headlineEl = document.querySelector('.pv-text-details__left-panel .text-body-medium');
         if (headlineEl) {
           headline = headlineEl.innerText.trim();
         }
-  
-        // Location: try to grab the first list item in the top-card bullet list
+      
+        // Location: Try to grab the location text using known classes
         let location = "";
-        const locationEl = document.querySelector('.pv-text-details__left-panel ul.pv-top-card--list-bullet li');
+        const locationEl = document.querySelector('.pv-text-details__left-panel ul li.t-14.t-black--light') ||
+                            document.querySelector('.pv-text-details__left-panel .t-14.t-black--light');
         if (locationEl) {
           location = locationEl.innerText.trim();
         }
-  
-        // Experience: look for a section with "experience" in its id or class name
+      
+        // Experience: Attempt to collect experience items from the experience section
         let experience = [];
-        const expSection = document.querySelector('section[id*="experience"]') || document.querySelector('section.experience-section');
+        // LinkedIn sometimes uses a section with an ID or class for experience; try both.
+        const expSection = document.querySelector('#experience-section') || document.querySelector('.experience-section');
         if (expSection) {
+          // Assuming each experience item is within an <li> element
           const expItems = expSection.querySelectorAll('li');
-          experience = Array.from(expItems).map(li => li.innerText.trim()).filter(text => text.length > 0);
+          experience = Array.from(expItems)
+            .map(li => li.innerText.trim())
+            .filter(text => text.length > 0);
         }
-  
-        // Education: similarly, look for an education section
+      
+        // Education: Similarly, extract education items
         let education = [];
-        const eduSection = document.querySelector('section[id*="education"]') || document.querySelector('section.education-section');
+        const eduSection = document.querySelector('#education-section') || document.querySelector('.education-section');
         if (eduSection) {
           const eduItems = eduSection.querySelectorAll('li');
-          education = Array.from(eduItems).map(li => li.innerText.trim()).filter(text => text.length > 0);
+          education = Array.from(eduItems)
+            .map(li => li.innerText.trim())
+            .filter(text => text.length > 0);
         }
-  
-        // Skills: try to locate the skills section and extract skill names
+      
+        // Skills: Extract skills from the skills section (ensure the section is expanded if needed)
         let skills = [];
         const skillsSection = document.querySelector('section.pv-skill-categories-section');
         if (skillsSection) {
           const skillEls = skillsSection.querySelectorAll('.pv-skill-category-entity__name-text');
-          skills = Array.from(skillEls).map(el => el.innerText.trim()).filter(text => text.length > 0);
+          skills = Array.from(skillEls)
+            .map(el => el.innerText.trim())
+            .filter(text => text.length > 0);
         }
-  
+      
         return { name, headline, location, experience, education, skills };
       });
-  
+        
       await browser.close();
       res.json(scrapedData);
     } catch (error) {
@@ -230,7 +246,6 @@ app.post('/linkedin-scrape', async (req, res) => {
       res.status(500).json({ error: error.message });
     }
   });
-  
 
 async function extractResumeDataWithAI(text) {
     const prompt = `
