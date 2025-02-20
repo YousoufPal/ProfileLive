@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const pdf = require('pdf-parse');
 const cors = require('cors');
-const fs = require('fs');
+const fs = require('fs').promises;
 const app = express();
 const port = 8000;
 const mongoose = require('mongoose');
@@ -157,84 +157,123 @@ app.get('/auth/linkedin/callback', async (req, res) => {
     }
 });
 
+// Express route handler
 app.post('/linkedin-scrape', async (req, res) => {
     try {
-      const { profileUrl } = req.body;
-      if (!profileUrl || !profileUrl.includes("linkedin.com/in/")) {
-        return res.status(400).json({ error: "Invalid LinkedIn URL" });
+        const { profileUrl } = req.body;
+        
+        if (!profileUrl) {
+            return res.status(400).json({ error: 'Profile URL is required' });
+        }
+
+        const profileData = await scrapeLinkedInProfile(profileUrl);
+        res.json(profileData);
+
+    } catch (error) {
+        console.error('Error in LinkedIn scrape route:', error);
+        res.status(500).json({ 
+            error: error.message,
+            details: 'Make sure the profile URL is valid'
+        });
+    }
+});
+
+// URL validation helper
+function validateAndFormatLinkedInUrl(url) {
+    try {
+      // Check if URL is provided
+      if (!url) {
+        throw new Error('URL is required');
       }
   
-      const browser = await puppeteer.launch({ headless: false });
-      const page = await browser.newPage();
+      // Convert to string if not already
+      url = url.toString();
   
-      // Set viewport and user agent
-      await page.setViewport({ width: 1280, height: 800 });
-      await page.setUserAgent(
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-      );
+      // Add https:// if not present
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'https://' + url;
+      }
   
-      // Load session cookies (make sure your linkedin-cookies.json is up-to-date)
-      const cookiesString = fs.readFileSync('linkedin-cookies.json', 'utf8');
-      const cookies = JSON.parse(cookiesString);
-      await page.setCookie(cookies);
+      // Create URL object to validate format
+      const urlObject = new URL(url);
   
-      // Block non-essential requests to speed up load time
-      await page.setRequestInterception(true);
-      page.on('request', (req) => {
-        const resourceType = req.resourceType();
-        if (['image', 'stylesheet', 'font'].includes(resourceType)) {
-          req.abort();
-        } else {
-          req.continue();
-        }
-      });
+      // Verify it's a LinkedIn profile URL
+      if (!urlObject.hostname.includes('linkedin.com')) {
+        throw new Error('Not a LinkedIn URL');
+      }
   
-      // Navigate to the profile page with a less strict wait condition
-      page.setDefaultNavigationTimeout(60000);
-      await page.goto(profileUrl, { waitUntil: 'load', timeout: 60000 });
+      // Verify it's a profile URL
+      if (!urlObject.pathname.includes('/in/')) {
+        throw new Error('Not a LinkedIn profile URL');
+      }
   
-      // Wait for a key element that indicates the page is loaded
-      await page.waitForSelector('h1', { timeout: 15000 });
-  
-      // Get the full HTML content of the page
-      const htmlContent = await page.content();
-  
-      // Build a prompt for the AI to extract the data
-      const prompt = `
-  Extract the following details from the LinkedIn profile HTML below:
-  - Name
-  - Headline
-  - Location
-  - Experience (as a list)
-  - Education (as a list)
-  - Skills (as a list)
-  
-  Return the output in valid JSON format with keys "name", "headline", "location", "experience", "education", and "skills".
-  
-  HTML:
-  ${htmlContent.substring(0, 15000)} 
-      `;
-      // Note: We trim the HTML content to avoid token limit issues. You may need to adjust this.
-  
-      // Call the OpenAI API (ensure your OpenAI instance is set up)
-      const openaiResponse = await openai.chat.completions.create({
-        model: 'gpt-4',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0,
-        max_tokens: 1000,
-      });
-  
-      // Parse the AI response
-      const scrapedData = JSON.parse(openaiResponse.choices[0].message.content);
-  
-      await browser.close();
-      res.json(scrapedData);
+      // Return the properly formatted URL
+      return urlObject.href;
     } catch (error) {
-      console.error('Error scraping LinkedIn profile with AI:', error);
-      res.status(500).json({ error: error.message });
+      throw new Error(`Invalid LinkedIn URL: ${error.message}`);
     }
-  });
+  }
   
+async function scrapeLinkedInProfile(profileUrl) {
+    let browser = null;
+    try {
+        // Validate and format the profile URL
+        const validUrl = validateAndFormatLinkedInUrl(profileUrl);
+        
+        browser = await puppeteer.launch({
+            headless: false, // Set to true for production
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu'
+            ]
+        });
+        const page = await browser.newPage();
+        await page.setViewport({ width: 1920, height: 1080 });
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');
+
+        // Corrected cookie file path without extra leading slash
+        const cookiesPath = 'c:/Users/pyous/Downloads/ProfileLive/backend/linkedin-cookies.json';
+        const cookiesString = await fs.readFile(cookiesPath, 'utf8');
+        const cookies = JSON.parse(cookiesString);
+        await page.setCookie(...cookies);
+
+        console.log('Navigating to profile:', validUrl);
+        await page.goto(validUrl, { waitUntil: 'networkidle0' });
+        await page.waitForSelector('h1', { timeout: 15000 });
+
+        const content = await page.evaluate(() => {
+            const getElementText = (selector) => {
+                const element = document.querySelector(selector);
+                return element ? element.innerText.trim() : '';
+            };
+            return {
+                name: getElementText('h1'),
+                headline: getElementText('[data-section="headline"]'),
+                about: getElementText('[data-section="about"]'),
+                experience: Array.from(document.querySelectorAll('.experience-section .experience-item')).map(exp => ({
+                    title: exp.querySelector('.title')?.innerText.trim() || '',
+                    company: exp.querySelector('.company')?.innerText.trim() || '',
+                    duration: exp.querySelector('.duration')?.innerText.trim() || ''
+                })),
+                education: Array.from(document.querySelectorAll('.education-section .education-item')).map(edu => ({
+                    school: edu.querySelector('.school-name')?.innerText.trim() || '',
+                    degree: edu.querySelector('.degree')?.innerText.trim() || '',
+                    years: edu.querySelector('.education-years')?.innerText.trim() || ''
+                }))
+            };
+        });
+        return content;
+    } catch (error) {
+        console.error('LinkedIn scraping error:', error);
+        throw error;
+    } finally {
+        if (browser) {
+            await browser.close();
+        }
+    }
+}
 
 async function extractResumeDataWithAI(text) {
     const prompt = `
