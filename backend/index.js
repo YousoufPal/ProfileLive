@@ -214,94 +214,82 @@ function validateAndFormatLinkedInUrl(url) {
     }
   }
   
-async function scrapeLinkedInProfile(profileUrl) {
+  async function scrapeLinkedInProfile(profileUrl) {
     let browser = null;
     try {
-        const validUrl = validateAndFormatLinkedInUrl(profileUrl);
-        
-        browser = await puppeteer.launch({
-            headless: false, // Set to true for production
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu'
-            ]
-        });
-        const page = await browser.newPage();
-        await page.setViewport({ width: 1920, height: 1080 });
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');
-
-        // Navigate to LinkedIn homepage to set domain context
-        await page.goto('https://www.linkedin.com/', { waitUntil: 'networkidle0', timeout: 60000 });
-
-        // Load cookies from file and set them on the page
-        const cookiesPath = 'c:/Users/pyous/Downloads/ProfileLive/backend/linkedin-cookies.json';
-        const cookiesString = await fs.readFile(cookiesPath, 'utf8');
-        const cookies = JSON.parse(cookiesString);
-        await page.setCookie(...cookies);
-
-        // Navigate to the validated profile URL (should be logged in with cookies)
-        console.log('Navigating to profile:', validUrl);
-        await page.goto(validUrl, { waitUntil: 'networkidle0', timeout: 60000 });
-        await page.waitForSelector('h1', { timeout: 30000 });
-
-        const content = await page.evaluate(() => {
-            const getElementText = (selector) => {
-                const element = document.querySelector(selector);
-                return element ? element.innerText.trim() : '';
-            };
-            return {
-                name: getElementText('h1'),
-                headline: getElementText('[data-section="headline"]'),
-                about: getElementText('[data-section="about"]'),
-                experience: Array.from(document.querySelectorAll('.experience-section .experience-item')).map(exp => ({
-                    title: exp.querySelector('.title')?.innerText.trim() || '',
-                    company: exp.querySelector('.company')?.innerText.trim() || '',
-                    duration: exp.querySelector('.duration')?.innerText.trim() || ''
-                })),
-                education: Array.from(document.querySelectorAll('.education-section .education-item')).map(edu => ({
-                    school: edu.querySelector('.school-name')?.innerText.trim() || '',
-                    degree: edu.querySelector('.degree')?.innerText.trim() || '',
-                    years: edu.querySelector('.education-years')?.innerText.trim() || ''
-                }))
-            };
-        });
-        return content;
-    } catch (error) {
-        console.error('LinkedIn scraping error:', error);
-        throw error;
-    } finally {
-        if (browser) {
-            await browser.close();
-        }
-    }
-}
-
-async function extractResumeDataWithAI(text) {
-    const prompt = `
-    Extract the following details from the resume text below:
-    - Name
-    - Experience (job title, company, dates)
-    - Education (degree, institution, dates)
-    - Skills (comma-separated list)
-
-    Return the data in JSON format.
-
-    Resume Text:
-    ${text}
-    `;
-
-    const response = await openai.chat.completions.create({
+      const validUrl = validateAndFormatLinkedInUrl(profileUrl);
+      
+      browser = await puppeteer.launch({
+        headless: false, // set to true for production
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu'
+        ]
+      });
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1920, height: 1080 });
+      await page.setUserAgent(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+      );
+  
+      // Navigate to LinkedIn homepage to set the domain context
+      await page.goto('https://www.linkedin.com/', { waitUntil: 'load', timeout: 60000 });
+  
+      // Load cookies from file and set them on the page
+      const cookiesPath = 'c:/Users/pyous/Downloads/ProfileLive/backend/linkedin-cookies.json';
+      const cookiesString = await fs.readFile(cookiesPath, 'utf8');
+      const cookies = JSON.parse(cookiesString);
+      console.log("Loaded cookies:", cookies);
+      await page.setCookie(...cookies);
+  
+      // Now navigate to the validated profile URL
+      console.log('Navigating to profile:', validUrl);
+      await page.goto(validUrl, { waitUntil: 'load', timeout: 60000 });
+      await page.waitForSelector('h1', { timeout: 15000 });
+      
+      // Get the raw HTML content of the profile page
+      const htmlContent = await page.content();
+  
+      // Build a prompt to ask ChatGPT to extract and summarize the profile data as plain text
+      const prompt = `
+  Here is the raw HTML of a LinkedIn profile page (truncated to 15000 characters):
+  ${htmlContent.substring(0, 15000)}
+  
+  Please extract and summarize all the relevant information from this profile, such as:
+  - Name
+  - Headline
+  - Location
+  - Experience
+  - Education
+  - Skills
+  
+  Return the summary as plain text.
+      `;
+  
+      // Call OpenAI's API to process the HTML and return a summary as plain text
+      const openaiResponse = await openai.chat.completions.create({
         model: 'gpt-4',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.5,
-        max_tokens: 500,
-    });
-
-    const extractedData = JSON.parse(response.choices[0].message.content);
-    return extractedData;
-}
+        max_tokens: 1000,
+      });
+  
+      // Return the text output directly, without trying to parse JSON
+      const processedText = openaiResponse.choices[0].message.content;
+      return { text: processedText };
+  
+    } catch (error) {
+      console.error('LinkedIn scraping error:', error);
+      throw error;
+    } finally {
+      if (browser) {
+        await browser.close();
+      }
+    }
+  }
+  
 
 app.listen(port, () => {
     console.log(`Server running on http://localhost:${port}`);
