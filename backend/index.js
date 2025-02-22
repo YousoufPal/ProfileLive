@@ -217,7 +217,6 @@ function validateAndFormatLinkedInUrl(url) {
 async function scrapeLinkedInProfile(profileUrl) {
     let browser = null;
     try {
-        // Validate and format the profile URL
         const validUrl = validateAndFormatLinkedInUrl(profileUrl);
         
         browser = await puppeteer.launch({
@@ -233,15 +232,19 @@ async function scrapeLinkedInProfile(profileUrl) {
         await page.setViewport({ width: 1920, height: 1080 });
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');
 
-        // Corrected cookie file path without extra leading slash
+        // Navigate to LinkedIn homepage to set domain context
+        await page.goto('https://www.linkedin.com/', { waitUntil: 'networkidle0', timeout: 60000 });
+
+        // Load cookies from file and set them on the page
         const cookiesPath = 'c:/Users/pyous/Downloads/ProfileLive/backend/linkedin-cookies.json';
         const cookiesString = await fs.readFile(cookiesPath, 'utf8');
         const cookies = JSON.parse(cookiesString);
         await page.setCookie(...cookies);
 
+        // Navigate to the validated profile URL (should be logged in with cookies)
         console.log('Navigating to profile:', validUrl);
-        await page.goto(validUrl, { waitUntil: 'networkidle0' });
-        await page.waitForSelector('h1', { timeout: 15000 });
+        await page.goto(validUrl, { waitUntil: 'networkidle0', timeout: 60000 });
+        await page.waitForSelector('h1', { timeout: 30000 });
 
         const content = await page.evaluate(() => {
             const getElementText = (selector) => {
